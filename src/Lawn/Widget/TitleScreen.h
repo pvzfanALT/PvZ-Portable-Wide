@@ -91,7 +91,6 @@ public:
 	virtual void			MouseDown(int x, int y, int theClickCount);
 	virtual void			KeyDown(KeyCode theKey);
 	void					SetRegistered();
-	void					DrawToPreload(Graphics* g);
 };
 
 #endif
