@@ -82,11 +82,6 @@ TitleScreen::~TitleScreen()
 #endif
 }
 
-void TitleScreen::DrawToPreload(Graphics* g)
-{
-	g->DrawImageF(IMAGE_PLANTSHADOW, 1000.0f, 0.0f);
-}
-
 void TitleScreen::Draw(Graphics* g)
 {
 	g->SetLinearBlend(true);
@@ -186,14 +181,7 @@ void TitleScreen::Draw(Graphics* g)
 	g->DrawImage(IMAGE_LOADBAR_DIRT, aGrassX, aGrassY + 18);
 
 	if (mCurBarWidth >= mTotalBarWidth)
-	{
 		g->DrawImage(IMAGE_LOADBAR_GRASS, aGrassX, aGrassY);
-
-		if (mLoadingThreadComplete)
-		{
-			DrawToPreload(g);
-		}
-	}
 	else
 	{
 		Graphics aClipG(*g);
