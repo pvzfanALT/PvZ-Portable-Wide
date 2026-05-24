@@ -794,7 +794,7 @@ void GameSelector::Update()
 		mMinigameButton->SetOffset(aNewX, aNewY);
 		mPuzzleButton->SetOffset(aNewX, aNewY);
 		mOptionsButton->SetOffset(aNewX, aNewY + 15);
-		mQuitButton->SetOffset(aNewX, aNewY + 5);
+		mQuitButton->SetOffset(aNewX + 5, aNewY + 5);
 		mHelpButton->SetOffset(aNewX, aNewY + 30);
 		mStoreButton->SetOffset(aNewX, aNewY);
 		mAlmanacButton->SetOffset(aNewX, aNewY);
