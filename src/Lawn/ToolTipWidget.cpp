@@ -82,6 +82,18 @@ void ToolTipWidget::GetLines(std::vector<std::string>& theLines)
 		{
 			aBreakDrawLen = aCharStart - aLineStart;
 			aBreakResumePos = aCharEnd;
+			if (aLineWidth >= mGetsLinesWidth)
+			{
+				theLines.push_back(mLabel.substr(aLineStart, aBreakDrawLen));
+				aCurPos = aBreakResumePos;
+				while (aCurPos < mLabel.size() && mLabel[aCurPos] == ' ')
+					aCurPos++;
+				aLineStart = aCurPos;
+				aLineWidth = 0;
+				aBreakDrawLen = -1;
+				aPrevChar = 0;
+				continue;
+			}
 		}
 		else if (Sexy::IsAutoBreakChar(aChar) &&
 			!Sexy::IsClosingPunctuation(aChar) &&
@@ -90,29 +102,18 @@ void ToolTipWidget::GetLines(std::vector<std::string>& theLines)
 		{
 			aBreakDrawLen = aCharStart - aLineStart;
 			aBreakResumePos = aCharStart;
-		}
-		aPrevChar = aChar;
-
-		if (aLineWidth >= mGetsLinesWidth)
-		{
-			if (aBreakDrawLen >= 0)
+			if (aLineWidth >= mGetsLinesWidth)
 			{
 				theLines.push_back(mLabel.substr(aLineStart, aBreakDrawLen));
 				aCurPos = aBreakResumePos;
-				while (aCurPos < mLabel.size() && mLabel[aCurPos] == ' ')
-					aCurPos++;
+				aLineStart = aCurPos;
+				aLineWidth = 0;
+				aBreakDrawLen = -1;
+				aPrevChar = 0;
+				continue;
 			}
-			else
-			{
-				size_t aDrawEnd = (aCharEnd > aLineStart) ? aCharEnd : aCharStart + 1;
-				theLines.push_back(mLabel.substr(aLineStart, aDrawEnd - aLineStart));
-				aCurPos = aDrawEnd;
-			}
-			aLineStart = aCurPos;
-			aLineWidth = 0;
-			aBreakDrawLen = -1;
-			aPrevChar = 0;
 		}
+		aPrevChar = aChar;
 	}
 
 	if (aLineStart < mLabel.size())

@@ -150,8 +150,8 @@ void ContinueDialog::ButtonDepress(int theId)
             LawnDialog* aDialog = (LawnDialog*)mApp->DoDialog(
                 Dialogs::DIALOG_RESTARTCONFIRM, 
                 true, 
-                "NEW GAME", 
-                "ARE YOU SURE THAT YUU WANT TO START A NEW GAME?", 
+                "New Game?", 
+                "Are you sure that you want to start a new game?", 
                 "", 
                 Dialog::BUTTONS_OK_CANCEL
             );

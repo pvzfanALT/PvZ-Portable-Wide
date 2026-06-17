@@ -3575,8 +3575,7 @@ void Board::UpdateToolTip()
 	}
 	else
 	{
-		// @Patoke: wrong function call
-		mToolTip->SetLabel(Plant::GetNameString(aUseSeedType));
+		mToolTip->SetLabel(Plant::GetNameString(aSeedPacket->mPacketType, aSeedPacket->mImitaterType));
 	}
 
 	int aPlantCost = GetCurrentPlantCost(aSeedPacket->mPacketType, aSeedPacket->mImitaterType);
@@ -3795,7 +3794,7 @@ void Board::MouseDownWithPlant(int x, int y, int theClickCount)
 		else if (aReason == PlantingReason::PLANTING_NOT_ON_ART)
 		{
 			std::string aSeedName = Plant::GetNameString(mChallenge->GetArtChallengeSeed(aGridX, aGridY), SeedType::SEED_NONE);
-			std::string aMessage = TodReplaceString("ADVICE_WRONG_ART_TYPE", "{SEED}", aSeedName);
+			std::string aMessage = TodReplaceString("[ADVICE_WRONG_ART_TYPE]", "{SEED}", aSeedName);
 			DisplayAdvice(aMessage, MessageStyle::MESSAGE_STYLE_HINT_FAST, AdviceType::ADVICE_PLANT_WRONG_ART_TYPE);
 		}
 		else if (aReason == PlantingReason::PLANTING_NEEDS_POT)
