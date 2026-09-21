@@ -239,6 +239,11 @@ jobs:
         git clone --depth=1 --branch "libopenmpt-${OPENMPT_TAG}"           https://github.com/OpenMPT/openmpt.git /tmp/libopenmpt-src
         cd /tmp/libopenmpt-src
 
+        # vita-elf-create cannot convert GOT-relative relocations, and an app
+        # on this target is never position independent, so drop the -fPIC that
+        # the gcc config adds unconditionally.
+        sed -i -e 's/ -fPIC//' build/make/config-gcc.mk
+
         # PvZ's music is MO3, which only libopenmpt decodes, and there is no
         # packaged build of it for this target. The toolchain goes through the
         # environment: passing it on the command line would stop libopenmpt's
