@@ -29,6 +29,7 @@
 #include <cstring>
 #include <vector>
 #include <map>
+#include <cstdarg>
 #include <cstdlib>
 #include <cstdint>
 #include <ctime>

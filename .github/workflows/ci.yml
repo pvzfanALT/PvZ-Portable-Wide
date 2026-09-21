@@ -272,7 +272,9 @@ jobs:
       run: |
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
         cmake -S . -B build-vita -G Ninja           -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake"           -DCMAKE_BUILD_TYPE=Release
-        cmake --build build-vita -j"$(nproc)"
+        # -k 0 keeps going after a failure so one run reports every problem
+        # rather than only the first handful.
+        cmake --build build-vita -j"$(nproc)" -- -k 0
 
         mkdir -p dist
         cp build-vita/pvz-portable.vpk dist/pvz-portable-vita.vpk
