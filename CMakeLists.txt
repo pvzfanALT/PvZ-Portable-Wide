@@ -381,6 +381,11 @@ elseif (VITA)
 		PVZ_VITA_LIBC_HEAP_MB=${VITA_LIBC_HEAP_MB}
 	)
 
+	# vita-elf-create appends the SCE module data after the first segment. The
+	# linker script leaves no gap there on its own, so the next segment lands
+	# right behind it and the conversion fails; reserve room for it up front.
+	target_link_options(pvz-portable PRIVATE "LINKER:--defsym=__sce_headroom=0x10000")
+
 	include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 	set(VITA_APP_NAME "PvZ Portable")
