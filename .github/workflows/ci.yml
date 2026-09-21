@@ -249,8 +249,15 @@ jobs:
         export AR=arm-vita-eabi-ar
         export RANLIB=arm-vita-eabi-ranlib
 
-        make CONFIG=gcc           STATIC_LIB=1 SHARED_LIB=0 DYNLINK=0           EXAMPLES=0 OPENMPT123=0 TEST=0           NO_ZLIB=1 NO_MPG123=1 NO_OGG=1 NO_VORBIS=1 NO_VORBISFILE=1           NO_PORTAUDIO=1 NO_PORTAUDIOCPP=1 NO_PULSEAUDIO=1           NO_SDL2=1 NO_FLAC=1 NO_SNDFILE=1           -j"$(nproc)"
-        make CONFIG=gcc           STATIC_LIB=1 SHARED_LIB=0           EXAMPLES=0 OPENMPT123=0 TEST=0           PREFIX="$VITASDK/arm-vita-eabi" install
+        # Both invocations have to carry the same flags: the install target
+        # depends on OUTPUTS, and dropping DYNLINK=0 there puts the shared
+        # library back into that list, which cannot be linked for this target.
+        openmpt_make() {
+          make CONFIG=gcc             STATIC_LIB=1 SHARED_LIB=0 DYNLINK=0             EXAMPLES=0 OPENMPT123=0 TEST=0             NO_ZLIB=1 NO_MPG123=1 NO_OGG=1 NO_VORBIS=1 NO_VORBISFILE=1             NO_PORTAUDIO=1 NO_PORTAUDIOCPP=1 NO_PULSEAUDIO=1             NO_SDL2=1 NO_FLAC=1 NO_SNDFILE=1             "$@"
+        }
+
+        openmpt_make -j"$(nproc)"
+        openmpt_make PREFIX="$VITASDK/arm-vita-eabi" install
 
     - name: Fetch GLES Driver Modules
       run: |
