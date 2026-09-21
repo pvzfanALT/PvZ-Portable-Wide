@@ -439,24 +439,30 @@ inline bool DefReadFromCacheImage(void*& theReadPtr, Image** theImage)
 {
     int aLen;
     SMemR(theReadPtr, &aLen, sizeof(int));  // 读取贴图标签字符数组的长度
-    char* aImageName = (char*)alloca(aLen + 1);  // 在栈上分配贴图标签字符数组的内存空间
-    SMemR(theReadPtr, aImageName, aLen);  // 读取贴图标签字符数组
-    aImageName[aLen] = '\0';
+    if (aLen < 0)
+        return false;  // 缓存已损坏，交由上层重新编译
+
+    // 长度直接来自缓存文件：用堆缓冲区代替按未经检查的大小增长的栈空间
+    //（alloca 也并非所有平台都提供）
+    std::string aImageName(static_cast<size_t>(aLen), '\0');
+    SMemR(theReadPtr, aImageName.data(), aLen);  // 读取贴图标签字符数组
 
     *theImage = nullptr;
-    return aImageName[0] == '\0' || DefinitionLoadImage(theImage, aImageName);
+    return aImageName[0] == '\0' || DefinitionLoadImage(theImage, aImageName.c_str());
 }
 
 inline bool DefReadFromCacheFont(void*& theReadPtr, _Font** theFont)
 {
     int aLen;
     SMemR(theReadPtr, &aLen, sizeof(int));  // 读取字体标签字符数组的长度
-    char* aFontName = (char*)alloca(aLen + 1);  // 在栈上分配字体标签字符数组的内存空间
-    SMemR(theReadPtr, aFontName, aLen);  // 读取字体标签字符数组
-    aFontName[aLen] = '\0';
-    
+    if (aLen < 0)
+        return false;  // 缓存已损坏，交由上层重新编译
+
+    std::string aFontName(static_cast<size_t>(aLen), '\0');
+    SMemR(theReadPtr, aFontName.data(), aLen);  // 读取字体标签字符数组
+
     *theFont = nullptr;
-    return aFontName[0] == '\0' || DefinitionLoadFont(theFont, aFontName);
+    return aFontName[0] == '\0' || DefinitionLoadFont(theFont, aFontName.c_str());
 }
 
 bool DefMapReadFromCache(void*& theReadPtr, DefMap* theDefMap, void* theDefinition)
