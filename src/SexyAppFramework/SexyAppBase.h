@@ -102,6 +102,20 @@ enum
 	NUM_CURSORS
 };
 
+// Actions a gamepad can ask for on platforms that steer a virtual pointer
+// (Vita, and anything else without a mouse). The app turns them into a screen
+// position, see SexyAppBase::ResolveControllerAction.
+enum ControllerAction
+{
+	CONTROLLER_ACTION_PREV_SLOT,   // step back through the seed packets
+	CONTROLLER_ACTION_NEXT_SLOT,   // step forward through the seed packets
+	CONTROLLER_ACTION_SHOVEL,      // reach for the shovel
+	CONTROLLER_ACTION_CELL_LEFT,   // hop one lawn square in each direction
+	CONTROLLER_ACTION_CELL_RIGHT,
+	CONTROLLER_ACTION_CELL_UP,
+	CONTROLLER_ACTION_CELL_DOWN
+};
+
 enum
 {
 	DEMO_MOUSE_POSITION,	
@@ -288,6 +302,10 @@ public:
 	bool					mSysCursor;	
 	bool					mCustomCursorsEnabled;
 	bool					mCustomCursorDirty;	
+	// Paint our own pointer over the finished frame. Platforms with no hardware
+	// cursor but with a gamepad (Vita) turn this on while the sticks are in use
+	// and off again as soon as a finger touches the screen.
+	bool					mSoftwareCursorEnabled;
 	bool					mLastShutdownWasGraceful;
 	bool					mIsWideWindow;
 	bool					mWriteToSexyCache;
@@ -361,6 +379,7 @@ protected:
 	virtual void			DoUpdateFramesF(float theFrac);
 	virtual void			MakeWindow();
 	virtual void			EnforceCursor();
+	void					DrawSoftwareCursor();
 	void					ResetCustomCursorCache();
 	virtual void			ReInitImages();
 	virtual void			DeleteNativeImageData();	
@@ -407,6 +426,12 @@ public:
 	virtual void			ReadFromRegistry();
 	virtual Dialog*			NewDialog(int theDialogId, bool isModal, const std::string& theDialogHeader, const std::string& theDialogLines, const std::string& theDialogFooter, int theButtonMode);
 	virtual void			PreDisplayHook();
+	// Gamepad helper for platforms driven by a virtual pointer. Maps an action
+	// onto the position in app coordinates that the pointer should jump to,
+	// starting from the position passed in. Returns false when the action does
+	// not apply to the current game state; sets theClick when the pointer
+	// should also click once it gets there.
+	virtual bool			ResolveControllerAction(ControllerAction theAction, int& theX, int& theY, bool& theClick);
 
 	// Public methods
 	virtual void			BeginPopup();

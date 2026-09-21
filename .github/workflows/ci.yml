@@ -179,6 +179,103 @@ jobs:
   #           ./build/pvz-portable.nro
   #           ./build/pvz-portable.elf
 
+  build-vita:
+    name: Build for PS Vita
+    runs-on: ubuntu-latest
+    container:
+      image: vitasdk/vitasdk:latest
+    env:
+      # The GLES 2.0 driver. The headers and stubs compiled against here and the
+      # modules shipped in the VPK must come from the same release.
+      PVR_PSP2_VERSION: "3.9"
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Install Extra Tools
+      run: |
+        apt-get update
+        apt-get install -y --no-install-recommends unzip zip
+        rm -rf /var/lib/apt/lists/*
+
+    - name: Install PVR_PSP2 Headers and Stubs
+      run: |
+        curl -L -o /tmp/pvr-headers.zip           "https://github.com/GrapheneCt/PVR_PSP2/archive/refs/tags/v${PVR_PSP2_VERSION}.zip"
+        unzip -q /tmp/pvr-headers.zip -d /tmp
+        cp -r "/tmp/PVR_PSP2-${PVR_PSP2_VERSION}/include/." "$VITASDK/arm-vita-eabi/include/"
+        # PVR_PSP2's khrplatform.h uses a non-standard include guard, so it does
+        # not deduplicate against the copy other packages install.
+        sed -i -e 's/__drvkhrplatform_h_/__khrplatform_h_/' "$VITASDK/arm-vita-eabi/include/KHR/khrplatform.h"
+
+        curl -L -o /tmp/pvr-stubs.zip           "https://github.com/GrapheneCt/PVR_PSP2/releases/download/v${PVR_PSP2_VERSION}/vitasdk_stubs.zip"
+        unzip -q /tmp/pvr-stubs.zip -d /tmp/pvr-stubs
+        find /tmp/pvr-stubs -name '*.a' -exec cp {} "$VITASDK/arm-vita-eabi/lib/" \;
+
+    - name: Build SDL2 with GLES 2.0 Support
+      run: |
+        SDL2_TAG=$(git ls-remote --tags https://github.com/libsdl-org/SDL.git 'refs/tags/release-2.*'           | sed 's|.*refs/tags/release-||' | grep -E '^[0-9.]+$' | sort -V | tail -1)
+        if [ -z "$SDL2_TAG" ]; then
+          SDL2_TAG="2.32.10" # Fallback to a known stable version if tag retrieval fails
+        fi
+        echo "Using SDL2 version: $SDL2_TAG"
+        curl -L -o /tmp/SDL2.tar.gz           "https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_TAG}/SDL2-${SDL2_TAG}.tar.gz"
+        mkdir -p /tmp/sdl2-src
+        tar xf /tmp/SDL2.tar.gz -C /tmp/sdl2-src --strip-components=1
+
+        # The packaged SDL2 is built without GLES, so it cannot create the
+        # OpenGL ES 2.0 context the renderer needs. Replace it in place.
+        cmake -S /tmp/sdl2-src -B /tmp/sdl2-build -G Ninja           -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake"           -DCMAKE_BUILD_TYPE=Release           -DVIDEO_VITA_PVR=ON           -DSDL_SHARED=OFF -DSDL_STATIC=ON           -DCMAKE_INSTALL_PREFIX="$VITASDK/arm-vita-eabi"
+        cmake --build /tmp/sdl2-build -j"$(nproc)"
+        cmake --install /tmp/sdl2-build
+
+    - name: Build libopenmpt for PS Vita
+      run: |
+        OPENMPT_TAG=$(git ls-remote --tags https://github.com/OpenMPT/openmpt.git 'refs/tags/libopenmpt-*'           | grep -v '\^{}' | sed 's|.*refs/tags/libopenmpt-||'           | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+        if [ -z "$OPENMPT_TAG" ]; then
+          OPENMPT_TAG="0.8.4" # Fallback to a known stable version if tag retrieval fails
+        fi
+        echo "Using libopenmpt version: $OPENMPT_TAG"
+        git clone --depth=1 --branch "libopenmpt-${OPENMPT_TAG}"           https://github.com/OpenMPT/openmpt.git /tmp/libopenmpt-src
+        cd /tmp/libopenmpt-src
+
+        # PvZ's music is MO3, which only libopenmpt decodes, and there is no
+        # packaged build of it for this target. The toolchain goes through the
+        # environment: passing it on the command line would stop libopenmpt's
+        # own makefile from appending the flags it needs.
+        export CC=arm-vita-eabi-gcc
+        export CXX=arm-vita-eabi-g++
+        export LD=arm-vita-eabi-g++
+        export AR=arm-vita-eabi-ar
+        export RANLIB=arm-vita-eabi-ranlib
+
+        make CONFIG=gcc           STATIC_LIB=1 SHARED_LIB=0 DYNLINK=0           EXAMPLES=0 OPENMPT123=0 TEST=0           NO_ZLIB=1 NO_MPG123=1 NO_OGG=1 NO_VORBIS=1 NO_VORBISFILE=1           NO_PORTAUDIO=1 NO_PORTAUDIOCPP=1 NO_PULSEAUDIO=1           NO_SDL2=1 NO_FLAC=1 NO_SNDFILE=1           -j"$(nproc)"
+        make CONFIG=gcc           STATIC_LIB=1 SHARED_LIB=0           EXAMPLES=0 OPENMPT123=0 TEST=0           PREFIX="$VITASDK/arm-vita-eabi" install
+
+    - name: Fetch GLES Driver Modules
+      run: |
+        # Shipped inside the VPK so the game runs without a separate driver
+        # install on the console.
+        curl -L -o /tmp/pvr-release.zip           "https://github.com/GrapheneCt/PVR_PSP2/releases/download/v${PVR_PSP2_VERSION}/PSVita_Release.zip"
+        mkdir -p vita/module
+        unzip -j -o /tmp/pvr-release.zip -d vita/module           libgpu_es4_ext.suprx libIMGEGL.suprx           libGLESv2.suprx libpvrPSP2_WSEGL.suprx
+        ls -lh vita/module
+
+    - name: Build PvZ-Portable for PS Vita
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        cmake -S . -B build-vita -G Ninja           -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake"           -DCMAKE_BUILD_TYPE=Release
+        cmake --build build-vita -j"$(nproc)"
+
+        mkdir -p dist
+        cp build-vita/pvz-portable.vpk dist/pvz-portable-vita.vpk
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: pvz-portable-vita
+        path: dist/
+
   build-macos:
     name: Build for macOS (aarch64)
     runs-on: macos-latest
@@ -455,7 +552,7 @@ jobs:
 
   release:
     name: Release
-    needs: ['build-archlinux', 'build-windows-msys2-ucrt64', 'build-windows-msvc-x64', 'build-macos', 'build-android', 'build-ios', 'build-wasm']
+    needs: ['build-archlinux', 'build-windows-msys2-ucrt64', 'build-windows-msvc-x64', 'build-macos', 'build-android', 'build-ios', 'build-wasm', 'build-vita']
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -491,6 +588,9 @@ jobs:
 
         echo "Preparing iOS file..."
         mv artifacts/pvz-portable-ios/pvz-portable-ios-arm64.ipa release_files/pvz-portable-ios-arm64.ipa
+
+        echo "Preparing PS Vita file..."
+        mv artifacts/pvz-portable-vita/pvz-portable-vita.vpk release_files/pvz-portable-vita.vpk
 
         echo "Preparing WebAssembly file..."
         cd artifacts/pvz-portable-wasm

@@ -415,3 +415,6 @@ tools/read-compiled/target
 *.sublime-workspace
 
 build-*/
+
+# PS Vita: GLES driver modules are downloaded at build time, never committed
+vita/module/*.suprx

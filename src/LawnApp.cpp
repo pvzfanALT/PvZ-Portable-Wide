@@ -20,10 +20,12 @@
  */
 
 //#include <corecrt.h>
+#include <algorithm>
 #include <time.h>
 #include "LawnApp.h"
 #include "Lawn/Board.h"
 #include "Lawn/Plant.h"
+#include "Lawn/SeedPacket.h"
 #include "Lawn/Zombie.h"
 #include "Lawn/Cutscene.h"
 #include "GameConstants.h"
@@ -1885,6 +1887,117 @@ void LawnApp::ConfirmQuit()
 	LawnDialog* aDialog = (LawnDialog*)DoDialog(Dialogs::DIALOG_QUIT, true, aHeader, aBody, "", Dialog::BUTTONS_OK_CANCEL);
 	aDialog->mLawnYesButton->mLabel = TodStringTranslate("[QUIT_BUTTON]");
 	CenterDialog(aDialog, aDialog->mWidth, aDialog->mHeight);
+}
+
+// Turns a gamepad action into a spot on screen for the virtual pointer to jump
+// to, so a controller can reach the parts of the lawn that really want a mouse.
+// Everything here is measured in board coordinates and shifted into app
+// coordinates on the way out.
+bool LawnApp::ResolveControllerAction(ControllerAction theAction, int& theX, int& theY, bool& theClick)
+{
+	Board* aBoard = mBoard;
+	if (aBoard == nullptr || mGameScene != GameScenes::SCENE_PLAYING)
+		return false;
+
+	const int aBoardX = aBoard->mX;
+	const int aBoardY = aBoard->mY;
+
+	switch (theAction)
+	{
+	case CONTROLLER_ACTION_PREV_SLOT:
+	case CONTROLLER_ACTION_NEXT_SLOT:
+	{
+		SeedBank* aSeedBank = aBoard->mSeedBank;
+		if (aSeedBank == nullptr || aSeedBank->mNumPackets <= 0)
+			return false;
+
+		const int aCount = std::min(static_cast<int>(aSeedBank->mNumPackets), SEEDBANK_MAX);
+		const int aStep = theAction == CONTROLLER_ACTION_NEXT_SLOT ? 1 : -1;
+
+		// Start from whichever packet the pointer is already on, so holding the
+		// shoulder buttons walks along the bank one packet at a time.
+		int anIndex = aStep > 0 ? -1 : aCount;
+		for (int i = 0; i < aCount; i++)
+		{
+			SeedPacket& aPacket = aSeedBank->mSeedPackets[i];
+			const int aLeft = aBoardX + aSeedBank->mX + aPacket.mX + aPacket.mOffsetX;
+			if (theX >= aLeft && theX < aLeft + aPacket.mWidth)
+			{
+				anIndex = i;
+				break;
+			}
+		}
+
+		for (int aTries = 0; aTries < aCount; aTries++)
+		{
+			anIndex += aStep;
+			if (anIndex < 0)
+				anIndex = aCount - 1;
+			else if (anIndex >= aCount)
+				anIndex = 0;
+
+			SeedPacket& aPacket = aSeedBank->mSeedPackets[anIndex];
+			if (aPacket.mPacketType == SeedType::SEED_NONE || aPacket.mSlotMachineCountDown > 0)
+				continue;  // an empty or still-spinning slot is not a target
+
+			theX = aBoardX + aSeedBank->mX + aPacket.mX + aPacket.mOffsetX + aPacket.mWidth / 2;
+			theY = aBoardY + aSeedBank->mY + aPacket.mY + aPacket.mHeight / 2;
+			theClick = true;
+			return true;
+		}
+		return false;
+	}
+
+	case CONTROLLER_ACTION_SHOVEL:
+	{
+		if (!aBoard->mShowShovel || !aBoard->CanInteractWithBoardButtons())
+			return false;
+
+		const Rect aRect = aBoard->GetShovelButtonRect();
+		theX = aBoardX + aRect.mX + aRect.mWidth / 2;
+		theY = aBoardY + aRect.mY + aRect.mHeight / 2;
+		theClick = true;
+		return true;
+	}
+
+	case CONTROLLER_ACTION_CELL_LEFT:
+	case CONTROLLER_ACTION_CELL_RIGHT:
+	case CONTROLLER_ACTION_CELL_UP:
+	case CONTROLLER_ACTION_CELL_DOWN:
+	{
+		const int aStepX =
+			theAction == CONTROLLER_ACTION_CELL_LEFT ? -1 :
+			theAction == CONTROLLER_ACTION_CELL_RIGHT ? 1 : 0;
+		const int aStepY =
+			theAction == CONTROLLER_ACTION_CELL_UP ? -1 :
+			theAction == CONTROLLER_ACTION_CELL_DOWN ? 1 : 0;
+
+		int aGridX = aBoard->PixelToGridXKeepOnBoard(theX - aBoardX, theY - aBoardY);
+		int aGridY = aBoard->PixelToGridYKeepOnBoard(theX - aBoardX, theY - aBoardY);
+
+		// Walk past rows and columns this level does not use rather than
+		// stopping dead at the first gap.
+		for (int aTries = 0; aTries < MAX_GRID_SIZE_X + MAX_GRID_SIZE_Y; aTries++)
+		{
+			aGridX += aStepX;
+			aGridY += aStepY;
+
+			if (aGridX < 0 || aGridX >= MAX_GRID_SIZE_X || aGridY < 0 || aGridY >= MAX_GRID_SIZE_Y)
+				return false;
+
+			if (aBoard->mGridSquareType[aGridX][aGridY] == GridSquareType::GRIDSQUARE_NONE)
+				continue;
+
+			theX = aBoardX + aBoard->GridToPixelX(aGridX, aGridY) + 40;
+			theY = aBoardY + aBoard->GridToPixelY(aGridX, aGridY) + 40;
+			theClick = false;
+			return true;
+		}
+		return false;
+	}
+	}
+
+	return false;
 }
 
 void LawnApp::PreDisplayHook()

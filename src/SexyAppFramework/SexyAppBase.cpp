@@ -63,6 +63,8 @@
 #include "imagelib/ImageLib.h"
 #include "sound/SDLSoundManager.h"
 #include "sound/SDLSoundInstance.h"
+#include "graphics/Graphics.h"
+#include "misc/Point.h"
 #include "misc/Rect.h"
 #include "misc/PropertiesParser.h"
 #include "misc/PerfTimer.h"
@@ -176,6 +178,8 @@ SexyAppBase::SexyAppBase()
 	mResourceDir = "sdmc:/switch/PvZPortable/";
 #elif defined(__3DS__)
 	mResourceDir = "sdmc:/3ds/PvZPortable/";
+#elif defined(__vita__)
+	mResourceDir = "ux0:/data/PvZPortable/";
 #elif defined(__ANDROID__) && !defined(__TERMUX__)
 	const char* aExtPath = SDL_AndroidGetExternalStoragePath();
 	if (aExtPath)
@@ -225,7 +229,7 @@ SexyAppBase::SexyAppBase()
 	mWidth = 640;
 	mHeight = 480;
 	mFullscreenBits = 16;
-#if defined(__IPHONEOS__) || (defined(__ANDROID__) && !defined(__TERMUX__)) || defined(__SWITCH__) || defined(__3DS__)
+#if defined(__IPHONEOS__) || (defined(__ANDROID__) && !defined(__TERMUX__)) || defined(__SWITCH__) || defined(__3DS__) || defined(__vita__)
 	mIsWindowed = false;
 #else
 	mIsWindowed = true;
@@ -282,7 +286,7 @@ SexyAppBase::SexyAppBase()
 	mLastDrawTick = SDL_GetTicks();
 	mNextDrawTick = SDL_GetTicks();
 	mSysCursor = true;	
-#if defined(__IPHONEOS__) || (defined(__ANDROID__) && !defined(__TERMUX__)) || defined(__SWITCH__) || defined(__3DS__)
+#if defined(__IPHONEOS__) || (defined(__ANDROID__) && !defined(__TERMUX__)) || defined(__SWITCH__) || defined(__3DS__) || defined(__vita__)
 	mForceFullscreen = true;
 #else
 	mForceFullscreen = false;
@@ -291,6 +295,7 @@ SexyAppBase::SexyAppBase()
 	mHasFocus = true;			
 	mCustomCursorsEnabled = false;	
 	mCustomCursorDirty = false;
+	mSoftwareCursorEnabled = false;
 	//mOverrideCursor = nullptr;
 	mIsOpeningURL = false;		
 	mInitialized = false;	
@@ -1276,7 +1281,7 @@ void SexyAppBase::ReadFromRegistry()
 	if (RegistryReadInteger("Muted", &anInt))
 		mMuteCount = anInt;
 
-#if !defined(__IPHONEOS__) && (!defined(__ANDROID__) || defined(__TERMUX__)) && !defined(__SWITCH__) && !defined(__3DS__) && !defined(__EMSCRIPTEN__)
+#if !defined(__IPHONEOS__) && (!defined(__ANDROID__) || defined(__TERMUX__)) && !defined(__SWITCH__) && !defined(__3DS__) && !defined(__EMSCRIPTEN__) && !defined(__vita__)
 	if (RegistryReadInteger("ScreenMode", &anInt))
 		mIsWindowed = anInt == 0;
 #endif
@@ -1791,7 +1796,12 @@ bool SexyAppBase::DrawDirtyStuff()
 		mLastDrawTick = aPreScreenBltTime;
 
 		if (drewScreen)
+		{
+			// On top of the finished frame, and only when that frame is about
+			// to be presented: the renderer batches geometry until Redraw.
+			DrawSoftwareCursor();
 			Redraw(nullptr);
+		}
 
 		// This is our one UpdateFTimeAcc if we are vsynched
 		UpdateFTimeAcc(); 
@@ -2300,7 +2310,7 @@ void SexyAppBase::StartCursorThread()
 
 void SexyAppBase::SwitchScreenMode(bool wantWindowed, bool is3d, bool force)
 {
-#if defined(__IPHONEOS__) || (defined(__ANDROID__) && !defined(__TERMUX__)) || defined(__SWITCH__) || defined(__3DS__)
+#if defined(__IPHONEOS__) || (defined(__ANDROID__) && !defined(__TERMUX__)) || defined(__SWITCH__) || defined(__3DS__) || defined(__vita__)
 	// Mobile/console platforms are always fullscreen; skip mode switching entirely.
 	Set3DAcclerated(is3d);
 	return;
@@ -2380,6 +2390,77 @@ void SexyAppBase::ResetCustomCursorCache()
 
 	mCustomCursorImage = nullptr;
 	mCustomCursorImageNum = -1;
+}
+
+void SexyAppBase::DrawSoftwareCursor()
+{
+	if (!mSoftwareCursorEnabled || mGLInterface == nullptr || mWidgetManager == nullptr)
+		return;
+
+	int aCursorNum = mSEHOccured ? CURSOR_POINTER : mCursorNum;
+	if (aCursorNum == CURSOR_NONE)
+		return;  // the game is drawing something of its own under the pointer
+	if (aCursorNum < 0 || aCursorNum >= NUM_CURSORS)
+		aCursorNum = CURSOR_POINTER;
+
+	// A plain arrow, as a 12x19 glyph with its tip on the hotspot, split into
+	// two convex pieces so each one can go through the hardware path.
+	static const float aHead[3][2] = {
+		{ 0.0f, 0.0f }, { 0.0f, 16.0f }, { 11.6f, 11.0f }
+	};
+	static const float aTail[4][2] = {
+		{ 4.0f, 12.2f }, { 6.6f, 18.4f }, { 9.4f, 17.2f }, { 6.9f, 11.2f }
+	};
+
+	// Keep the pointer at a constant apparent size whatever the board scale is.
+	const float aScale = mWidth / 1066.0f * 1.6f;
+	const int aX = mWidgetManager->mLastMouseX;
+	const int aY = mWidgetManager->mLastMouseY;
+
+	// Growing the glyph about its middle gives the outline an even width
+	// without moving the tip off the hotspot.
+	const float aCenterX = 5.4f;
+	const float aCenterY = 11.5f;
+	const float aOutlineGrow = 1.32f;
+
+	Point aHeadBody[3], aHeadEdge[3];
+	for (int i = 0; i < 3; i++)
+	{
+		aHeadBody[i] = Point(aX + (int)(aHead[i][0] * aScale), aY + (int)(aHead[i][1] * aScale));
+		aHeadEdge[i] = Point(
+			aX + (int)(((aHead[i][0] - aCenterX) * aOutlineGrow + aCenterX) * aScale),
+			aY + (int)(((aHead[i][1] - aCenterY) * aOutlineGrow + aCenterY) * aScale));
+	}
+
+	Point aTailBody[4], aTailEdge[4];
+	for (int i = 0; i < 4; i++)
+	{
+		aTailBody[i] = Point(aX + (int)(aTail[i][0] * aScale), aY + (int)(aTail[i][1] * aScale));
+		aTailEdge[i] = Point(
+			aX + (int)(((aTail[i][0] - aCenterX) * aOutlineGrow + aCenterX) * aScale),
+			aY + (int)(((aTail[i][1] - aCenterY) * aOutlineGrow + aCenterY) * aScale));
+	}
+
+	Graphics g(mGLInterface->GetScreenImage());
+
+	g.SetColor(Color(0, 0, 0, 200));
+	g.PolyFill(aHeadEdge, 3, true);
+	g.PolyFill(aTailEdge, 4, true);
+
+	// Tint the arrow while it is over something the game says is clickable.
+	const bool aIsOverActive = aCursorNum == CURSOR_HAND || aCursorNum == CURSOR_DRAGGING;
+	g.SetColor(aIsOverActive ? Color(255, 226, 90) : Color(255, 255, 255));
+	g.PolyFill(aHeadBody, 3, true);
+	g.PolyFill(aTailBody, 4, true);
+}
+
+bool SexyAppBase::ResolveControllerAction(ControllerAction theAction, int& theX, int& theY, bool& theClick)
+{
+	(void)theAction;
+	(void)theX;
+	(void)theY;
+	(void)theClick;
+	return false;
 }
 
 void SexyAppBase::EnforceCursor()
@@ -3355,7 +3436,7 @@ void SexyAppBase::Init()
 	{
 		SetAppDataFolder("/saves/");
 	}
-#elif !defined(__SWITCH__) && !defined(__3DS__)
+#elif !defined(__SWITCH__) && !defined(__3DS__) && !defined(__vita__)
 	{
 		char* aPrefPath = SDL_GetPrefPath("io.github.wszqkzqk", "PvZPortable"); // Avoid conflict with official Plants vs. Zombies
 		if (aPrefPath)

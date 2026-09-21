@@ -31,6 +31,16 @@
 #include <EGL/eglext.h>
 #endif
 
+#ifdef __vita__
+// PVR_PSP2 exports the whole GLES 2.0 core from libGLESv2.suprx and ships
+// import stubs for it, so the entry points are resolved by the linker and
+// there is nothing for a loader like glad to do.  eglGetProcAddress on this
+// driver only answers for extensions, which is exactly why glad must not be
+// used here.
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#else
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4551) // glad generated code triggers this on MSVC
@@ -41,6 +51,8 @@
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+
+#endif // __vita__
 
 #include <SDL.h>
 
@@ -59,7 +71,9 @@ extern bool gDesktopGLFallback;
 
 inline void PlatformGLInit()
 {
-#ifdef __SWITCH__
+#if defined(__vita__)
+	// Entry points are linked in directly; nothing to load.
+#elif defined(__SWITCH__)
 	gladLoadGLES2((GLADloadfunc)eglGetProcAddress);
 #else
 	gladLoadGLES2((GLADloadfunc)SDL_GL_GetProcAddress);

@@ -10,7 +10,7 @@ A **cross-platform** community-driven reimplementation of Plants vs. Zombies: Ga
 
 | 🌿 Authentic | 🎮 Portable | 🛠️ Open |
 | :---: | :---: | :---: |
-| Almost 100% gameplay recreation | Support for 32/64 bit systems<br>Run on Linux, Windows, macOS, Android, iOS, WebAssembly, Switch... | OpenGL ES 2.0 & SDL |
+| Almost 100% gameplay recreation | Support for 32/64 bit systems<br>Run on Linux, Windows, macOS, Android, iOS, WebAssembly, Switch, PS Vita... | OpenGL ES 2.0 & SDL |
 
 🌐 **No install wanted?** [Try directly in your browser!](https://wszqkzqk.github.io/pvz-portable-wasm/pvz-portable.html) (You still need your own game data files.)
 
@@ -61,6 +61,7 @@ This project supports the following platforms (including but not limited to):
 | iOS / iPadOS    | App Documents directory (Files app) | Works (sideload only; unsigned IPA)                                                    |
 | Web (WASM)      | Browser IndexedDB (saves); resources uploaded at runtime    | Works (requires a HTTP server) |
 | Nintendo Switch | sdmc:/switch/PvZPortable | Works on real hardware. Kenji-NX crashes on boot.                           |
+| PlayStation Vita / PS TV | `ux0:data/PvZPortable` | Works. Needs unsafe homebrew enabled; touchscreen and full gamepad control.   |
 | Nintendo 3DS    | sdmc:/3ds/PvZPortable    | Might not have enough memory for Old 3DS and barely work on New 3DS (discontionued) |
 
 To play the game, you need the game data from PvZ GOTY. Place `main.pak` and the `properties/` folder next to the `pvz-portable` executable (the game will search for resources relative to the executable's directory). You can also use extracted data instead of `main.pak` if you prefer.
@@ -122,6 +123,45 @@ The app's Documents folder is exposed via iTunes/Finder file sharing and the iOS
 - Requires iOS 15.0+ (arm64).
 - Free Apple ID signatures expire after 7 days; TrollStore installs are permanent.
 - Same touch-to-mouse mapping and aspect ratio behavior as the Android port.
+
+### Special Instructions for PS Vita / PlayStation TV
+
+Download `pvz-portable-vita.vpk` from the [Releases](https://github.com/wszqkzqk/PvZ-Portable/releases) page or build it yourself (see [Building for PS Vita](#building-for-ps-vita)), then install it with VitaShell or any homebrew installer.
+
+#### First Launch
+
+1. In **Settings → HENkaku / h-encore**, turn on **Enable unsafe homebrew**. The OpenGL ES driver maps video memory directly and the app will not start without it.
+2. Install the VPK and launch it once. It creates `ux0:data/PvZPortable/` and then exits with a message telling you the game data is missing.
+3. Copy `main.pak` and the `properties/` folder from your **legally purchased** copy of Plants vs. Zombies: GOTY Edition into `ux0:data/PvZPortable/`.
+4. Launch the game again.
+
+Save files, settings and compiled caches live in `ux0:data/PvZPortable/savedata/`, so they survive reinstalling the VPK. Mid-level `.v4` saves are portable to and from every other platform.
+
+#### Controls
+
+The front touchscreen works exactly like a mouse, and the sticks drive an on-screen pointer, so you can switch between them at any moment. The rear touch panel is ignored on purpose — it is far too easy to brush while holding the console.
+
+| Input | Action |
+| :--- | :--- |
+| Front touchscreen | Tap and drag, same as a mouse |
+| Left stick | Move the pointer |
+| Right stick | Move the pointer slowly, for placing plants precisely |
+| D-Pad | Hop the pointer between lawn squares; scrolls lists in menus |
+| ✕ Cross | Click / plant |
+| ○ Circle | Back: put down the held plant, close a dialog, open the in-game menu |
+| △ Triangle | Confirm, and advance Crazy Dave's dialogue |
+| □ Square | Pick up the shovel |
+| L / R | Previous / next seed packet |
+| SELECT | Put down whatever the cursor is holding |
+| START | Pause |
+
+On Japanese systems ✕ and ○ swap to follow the console's own **Enter button assignment** setting. On PlayStation TV the pad on controller port 1 is used, so a DualShock works the same way.
+
+#### Notes
+
+- Runs at the panel's native 960x544 with the board letterboxed to 16:9, at the hardware's maximum clocks (444 MHz CPU / 222 MHz GPU).
+- Image caching is disabled and preloading is reduced (`LOW_MEMORY`), because the decoded artwork, the pak and the GPU driver all share a 256 MiB budget. Tune the split with `-DVITA_NEWLIB_HEAP_MB=` and `-DVITA_LIBC_HEAP_MB=` if you run into trouble.
+- The VPK bundles the [PVR_PSP2](https://github.com/GrapheneCt/PVR_PSP2) GLES 2.0 driver modules, so no separate driver install is needed.
 
 ### Play in Your Browser (WebAssembly)
 
@@ -232,6 +272,8 @@ You can customize the game features by adding options to the first `cmake` comma
 | `DO_FIX_BUGS` | `OFF` | Apply community fixes for "bugs" of official 1.2.0.1073 GOTY Edition.[^1] However, these "bugs" are usually **considered "features"** by many players. |
 | `CONSOLE` | `OFF`<br>(`ON` if `CMAKE_BUILD_TYPE` is `Debug`) | Show a console window (Windows only). |
 | `BUILD_STATIC` | `OFF` | Link statically to create a standalone executable (Windows with MinGW-based toolchains only). Use a vcpkg `-static` triplet for MSVC instead. |
+| `VITA_NEWLIB_HEAP_MB` | `160` | PS Vita only: size of the C/C++ heap in MiB. |
+| `VITA_LIBC_HEAP_MB` | `16` | PS Vita only: size of the SceLibc heap in MiB. Together with the option above this must leave room for the executable, the stacks and the GPU driver's pools inside the app's 256 MiB budget. |
 
 [^1]: Current `DO_FIX_BUGS` includes the following fixes:
     - Fix bungee zombie duplicate sun/item drop in I, Zombie mode.
@@ -251,6 +293,29 @@ Example: Manually enable `PVZ_DEBUG` in **Release build** so that you can use **
 ```bash
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DPVZ_DEBUG=ON
 ```
+
+### Building for PS Vita
+
+The Vita build needs [VitaSDK](https://vitasdk.org/) plus three things the package catalogue does not carry: the [PVR_PSP2](https://github.com/GrapheneCt/PVR_PSP2) OpenGL ES 2.0 driver, an SDL2 built against it, and libopenmpt. The CI job `build-vita` in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) does all of it from scratch and uploads the finished VPK, so the quickest route is to push the branch and take the artifact. To do the same locally:
+
+1. Install VitaSDK and its packages with [vdpm](https://github.com/vitasdk/vdpm), or use the official image:
+
+   ```bash
+   docker run --rm -it -v "$PWD:/workspace" vitasdk/vitasdk:latest
+   ```
+
+2. Install the PVR_PSP2 headers and import stubs into `$VITASDK/arm-vita-eabi/{include,lib}`, and patch the include guard in `KHR/khrplatform.h` (see the `Install PVR_PSP2 Headers and Stubs` step in the workflow).
+3. Build SDL2 from source with `-DVIDEO_VITA_PVR=ON` and install it over the packaged one. The packaged build has no GLES support and cannot create the context this renderer needs.
+4. Build libopenmpt with the `arm-vita-eabi` toolchain and install it into the same prefix. Without it the game runs but has no music, since PvZ's soundtrack is MO3.
+5. Download the driver modules into `vita/module/` (see [`vita/module/README.md`](vita/module/README.md)); they are packed into the VPK.
+6. Configure and build:
+
+   ```bash
+   cmake -S . -B build-vita -G Ninja      -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake"      -DCMAKE_BUILD_TYPE=Release
+   cmake --build build-vita
+   ```
+
+The result is `build-vita/pvz-portable.vpk`.
 
 If running these commands does not create a successful build please create an issue and detail your problem.
 

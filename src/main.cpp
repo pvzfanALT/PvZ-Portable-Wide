@@ -45,6 +45,61 @@ extern "C" {
 #include <fstream>
 #endif
 
+#ifdef __vita__
+#include <psp2/io/stat.h>
+#include <SDL.h>
+
+#ifndef PVZ_VITA_NEWLIB_HEAP_MB
+#define PVZ_VITA_NEWLIB_HEAP_MB 160
+#endif
+#ifndef PVZ_VITA_LIBC_HEAP_MB
+#define PVZ_VITA_LIBC_HEAP_MB 16
+#endif
+
+extern "C" {
+	// Carve up the app's memory budget before anything runs. The C++ heap holds
+	// the pak, decoded images and reanimations; SceLibc backs the system
+	// libraries; what is left over covers the PowerVR driver's own pools, so
+	// these must not add up to the whole budget.
+	unsigned int sceLibcHeapSize = PVZ_VITA_LIBC_HEAP_MB * 1024 * 1024;
+	int _newlib_heap_size_user = PVZ_VITA_NEWLIB_HEAP_MB * 1024 * 1024;
+}
+
+static const char* const kVitaDataDir = "ux0:/data/PvZPortable";
+
+// Returns false (after telling the player where to put them) when the game data
+// is not on the memory card yet.
+static bool VitaCheckGameResources()
+{
+	sceIoMkdir("ux0:/data", 0777);
+	sceIoMkdir(kVitaDataDir, 0777);
+
+	std::error_code anError;
+	const std::filesystem::path aDataPath(kVitaDataDir);
+	if (std::filesystem::is_regular_file(aDataPath / "main.pak", anError) ||
+		std::filesystem::is_directory(aDataPath / "properties", anError))
+	{
+		return true;
+	}
+
+	fprintf(stderr, "No game data found in %s\n", kVitaDataDir);
+
+	if (SDL_Init(SDL_INIT_VIDEO) == 0)
+	{
+		SDL_ShowSimpleMessageBox(
+			SDL_MESSAGEBOX_ERROR,
+			"Game data not found",
+			"Copy main.pak and the properties folder from your own copy of "
+			"Plants vs. Zombies: GOTY Edition into ux0:data/PvZPortable/ and "
+			"start the game again.",
+			nullptr);
+		SDL_Quit();
+	}
+
+	return false;
+}
+#endif
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -104,6 +159,11 @@ int main(int argc, char** argv)
 
 #ifdef _WIN32
 	BuildUtf8ArgsFromWin32(argc, argv);
+#endif
+
+#ifdef __vita__
+	if (!VitaCheckGameResources())
+		return 1;
 #endif
 
 #ifdef __IPHONEOS__

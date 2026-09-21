@@ -77,6 +77,31 @@ elseif(NINTENDO_3DS)
 	list(APPEND PLAT_INCLUDES
 		${CMAKE_CURRENT_SOURCE_DIR}/src/SexyAppFramework/platform/3ds
 	)
+elseif(VITA)
+	# The GPU driver, the decoded images and the pak all share a 256 MiB budget,
+	# so drop the caches the desktop builds keep around. Images stay at 1x: the
+	# board is 1066x600 and the panel is 960x544, so there is nothing to gain
+	# from halving them.
+	set(LOW_MEMORY ON)
+
+	find_library(OGG_LIBRARY NAMES ogg libogg REQUIRED)
+	find_library(VORBIS_LIBRARY NAMES vorbis libvorbis REQUIRED)
+	find_library(VORBISFILE_LIBRARY NAMES vorbisfile libvorbisfile REQUIRED)
+	find_library(OPENMPT_LIBRARY NAMES openmpt libopenmpt REQUIRED)
+	find_library(MPG123_LIBRARY NAMES mpg123 libmpg123 REQUIRED)
+
+	set(VORBIS_LIB ${VORBISFILE_LIBRARY} ${VORBIS_LIBRARY})
+	set(OGG_LIB ${OGG_LIBRARY})
+	set(OPENMPT_LIB ${OPENMPT_LIBRARY})
+	set(MPG123_LIB ${MPG123_LIBRARY})
+
+	list(APPEND SOURCES
+		${CMAKE_CURRENT_SOURCE_DIR}/src/SexyAppFramework/platform/vita/Window.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/src/SexyAppFramework/platform/vita/Input.cpp
+	)
+	list(APPEND PLAT_INCLUDES
+		${CMAKE_CURRENT_SOURCE_DIR}/src/SexyAppFramework/platform/vita
+	)
 elseif(EMSCRIPTEN)
 	# libopenmpt has no Emscripten port; must be pre-built with emmake.
 	find_library(OPENMPT_LIBRARY NAMES openmpt libopenmpt REQUIRED)
@@ -137,7 +162,14 @@ if(EMSCRIPTEN)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sUSE_SDL=2 -sUSE_ZLIB=1 -sUSE_LIBPNG=1 -sUSE_LIBJPEG=1 -sUSE_OGG=1 -sUSE_VORBIS=1 -sUSE_MPG123=1")
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sUSE_SDL=2 -sUSE_ZLIB=1 -sUSE_LIBPNG=1 -sUSE_LIBJPEG=1 -sUSE_OGG=1 -sUSE_VORBIS=1 -sUSE_MPG123=1")
 else()
-	find_package(Threads REQUIRED)
+	if(VITA)
+		# FindThreads probes the compiler in a way that does not survive
+		# CMAKE_SYSTEM_NAME Generic; vitasdk ships pthreads as a plain library.
+		set(THREADS_LINK_LIB pthread)
+	else()
+		find_package(Threads REQUIRED)
+		set(THREADS_LINK_LIB Threads::Threads)
+	endif()
 	find_package(ZLIB REQUIRED)
 	find_package(JPEG REQUIRED)
 	find_package(PNG REQUIRED)
@@ -165,8 +197,17 @@ if(BUILD_STATIC AND TARGET SDL2::SDL2-static)
 		_pvz_patch_sdl2_iface_libs(SDL2::SDL2main)
 	endif()
 	set(SDL2_LINK_TARGET SDL2::SDL2-static)
+elseif(NOT TARGET SDL2::SDL2 AND TARGET SDL2::SDL2-static)
+	# Static-only installs (Vita and other consoles) export just this target.
+	set(SDL2_LINK_TARGET SDL2::SDL2-static)
 else()
 	set(SDL2_LINK_TARGET SDL2::SDL2)
+endif()
+
+if(TARGET SDL2::SDL2main)
+	set(SDL2_MAIN_TARGET SDL2::SDL2main)
+else()
+	set(SDL2_MAIN_TARGET "")
 endif()
 
 set(SDL_MIXER_X_STATIC ON CACHE BOOL "Build static library of SDL Mixer X")
@@ -248,9 +289,9 @@ else()
 		PNG::PNG
 		JPEG::JPEG
 		ZLIB::ZLIB
-		SDL2::SDL2main
+		${SDL2_MAIN_TARGET}
 		${SDL2_LINK_TARGET}
-		Threads::Threads
+		${THREADS_LINK_LIB}
 	)
 endif()
 
@@ -304,6 +345,86 @@ elseif (NINTENDO_3DS)
 
 	ctr_create_3dsx(pvz-portable
 		SMDH pvz-portable.smdh
+	)
+elseif (VITA)
+	# PVR_PSP2 exports the GLES 2.0 core and EGL from real modules, so these are
+	# import stubs rather than a GL implementation we link in.
+	target_link_libraries(pvz-portable PRIVATE
+		libGLESv2_stub
+		libIMGEGL_stub
+		libgpu_es4_ext_stub
+		SceAppMgr_stub
+		SceAppUtil_stub
+		SceAudio_stub
+		SceAudioIn_stub
+		SceCommonDialog_stub
+		SceCtrl_stub
+		SceDisplay_stub
+		SceGxm_stub
+		SceHid_stub
+		SceIme_stub
+		SceLibKernel_stub
+		SceMotion_stub
+		ScePower_stub
+		SceProcessmgr_stub
+		SceSysmodule_stub
+		SceTouch_stub
+	)
+
+	# How the app's memory budget is split before main() runs. The rest of the
+	# budget covers code, stacks and the GPU driver's own pools, so raising
+	# these too far stops the app from launching at all.
+	set(VITA_NEWLIB_HEAP_MB 160 CACHE STRING "Vita: C/C++ heap size in MiB")
+	set(VITA_LIBC_HEAP_MB 16 CACHE STRING "Vita: SceLibc heap size in MiB")
+	target_compile_definitions(pvz-portable PRIVATE
+		PVZ_VITA_NEWLIB_HEAP_MB=${VITA_NEWLIB_HEAP_MB}
+		PVZ_VITA_LIBC_HEAP_MB=${VITA_LIBC_HEAP_MB}
+	)
+
+	include("${VITASDK}/share/vita.cmake" REQUIRED)
+
+	set(VITA_APP_NAME "PvZ Portable")
+	set(VITA_TITLEID "PVZP00001")
+	set(VITA_VERSION "01.00")
+
+	# The PowerVR driver loads its own modules and maps CDRAM directly, which
+	# only an unsafe SELF is allowed to do.
+	vita_create_self(pvz-portable.self pvz-portable UNSAFE)
+
+	# The GLES driver modules are not redistributed in this repository; fetch
+	# them from the PVR_PSP2 release (see .github/workflows/ci.yml) into
+	# vita/module/ before packaging, or the VPK will start to a black screen.
+	set(VITA_PVR_MODULES
+		libgpu_es4_ext.suprx
+		libIMGEGL.suprx
+		libGLESv2.suprx
+		libpvrPSP2_WSEGL.suprx
+	)
+	set(VITA_VPK_FILES)
+	foreach(_module IN LISTS VITA_PVR_MODULES)
+		set(_path "${CMAKE_CURRENT_SOURCE_DIR}/vita/module/${_module}")
+		if(EXISTS "${_path}")
+			list(APPEND VITA_VPK_FILES FILE "${_path}" "module/${_module}")
+		else()
+			message(WARNING "Missing GLES driver module ${_path}; the VPK will not run until it is added.")
+		endif()
+	endforeach()
+
+	foreach(_asset
+		sce_sys/icon0.png
+		sce_sys/livearea/contents/bg.png
+		sce_sys/livearea/contents/startup.png
+		sce_sys/livearea/contents/template.xml)
+		set(_path "${CMAKE_CURRENT_SOURCE_DIR}/vita/${_asset}")
+		if(EXISTS "${_path}")
+			list(APPEND VITA_VPK_FILES FILE "${_path}" "${_asset}")
+		endif()
+	endforeach()
+
+	vita_create_vpk(pvz-portable.vpk ${VITA_TITLEID} pvz-portable.self
+		VERSION ${VITA_VERSION}
+		NAME ${VITA_APP_NAME}
+		${VITA_VPK_FILES}
 	)
 elseif (ANDROID)
 	target_link_libraries(pvz-portable PRIVATE GLESv2 EGL android log)

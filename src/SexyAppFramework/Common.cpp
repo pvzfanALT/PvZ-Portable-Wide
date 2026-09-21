@@ -36,6 +36,8 @@
 #include <switch.h>
 #elif defined(__3DS__)
 #include <3ds.h>
+#elif defined(__vita__)
+#include <psp2/kernel/clib.h>
 #elif defined(__ANDROID__) && !defined(__TERMUX__)
 #include <android/log.h>
 #endif
@@ -67,6 +69,9 @@ void Sexy::PrintF(const char *text, ...)
 
 #if defined(__SWITCH__) || defined(__3DS__)
 	svcOutputDebugString(buffer.c_str(), buffer.size());
+#elif defined(__vita__)
+	// Reaches the kernel debug log, which is what USB/network log viewers read.
+	sceClibPrintf("%s", buffer.c_str());
 #elif defined(__ANDROID__) && !defined(__TERMUX__)
 	__android_log_write(ANDROID_LOG_INFO, "PvZPortable", buffer.c_str());
 #endif
@@ -266,7 +271,9 @@ bool Sexy::IsPathRooted(std::string_view thePath)
 	if (aPath.has_root_path())
 		return true;
 
-#if defined(__SWITCH__) || defined(__3DS__)
+#if defined(__SWITCH__) || defined(__3DS__) || defined(__vita__)
+	// Console paths are "device:/dir/file" (sdmc:, ux0:, ...), which
+	// std::filesystem on these targets does not recognise as a root.
 	const size_t aColonPos = thePath.find(':');
 	if (aColonPos == std::string_view::npos || aColonPos == 0 || aColonPos + 1 >= thePath.size())
 		return false;

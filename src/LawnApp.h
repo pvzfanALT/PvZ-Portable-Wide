@@ -212,6 +212,7 @@ public:
 	virtual void					ModalOpen();
 	virtual void					ModalClose();
 	virtual void					PreDisplayHook();
+	virtual bool					ResolveControllerAction(ControllerAction theAction, int& theX, int& theY, bool& theClick);
 	virtual bool					ChangeDirHook(const char* theIntendedPath);
 	virtual bool					NeedRegister();
 	virtual void					UpdateRegisterInfo();
