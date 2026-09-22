@@ -276,13 +276,23 @@ jobs:
     - name: Build PvZ-Portable for PS Vita
       run: |
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
-        cmake -S . -B build-vita -G Ninja           -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake"           -DCMAKE_BUILD_TYPE=Release
+        # -g only adds debug sections; it does not change code generation, so
+        # the packaged eboot.bin is the same binary either way. Keeping the
+        # symbols means a crash dump off a console can be turned back into
+        # file and line numbers.
+        cmake -S . -B build-vita -G Ninja           -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake"           -DCMAKE_BUILD_TYPE=Release           -DCMAKE_C_FLAGS_RELEASE="-O3 -DNDEBUG -g"           -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g"
         # -k 0 keeps going after a failure so one run reports every problem
         # rather than only the first handful.
         cmake --build build-vita -j"$(nproc)" -- -k 0
 
         mkdir -p dist
         cp build-vita/pvz-portable.vpk dist/pvz-portable-vita.vpk
+
+    - name: Upload Debug Symbols
+      uses: actions/upload-artifact@v7
+      with:
+        name: pvz-portable-vita-elf
+        path: build-vita/pvz-portable
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v7
